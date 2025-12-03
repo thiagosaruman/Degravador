@@ -142,10 +142,6 @@ def run_transcription(caminho_arquivo):
             except:
                 pass
 
-def run_transcription(caminho_arquivo):
-    # Função wrapper para o bloco principal de execução (usada por app_cli e app_web)
-    return run_transcription(caminho_arquivo)
-
 
 if __name__ == "__main__":
     # Bloco CLI de uso local (se rodar app_cli.py)
@@ -159,3 +155,4 @@ if __name__ == "__main__":
             print(run_transcription(arq))
         print("\n🏁 Fim da fila.")
         time.sleep(3)
+
