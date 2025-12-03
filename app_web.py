@@ -3,13 +3,17 @@
 import streamlit as st
 import os
 import time
-import transcriber_core # Importa o motor central
+import uuid # NOVO: Para criar nomes de arquivos únicos e seguros
+import transcriber_core 
 
 # Configura o título e layout da página
 st.set_page_config(page_title="Deepgram Transcriber", layout="wide")
 
-st.title("🗣️ Degravador da Mari")
+st.title("🗣️ Transcritor Jurídico Cloud")
 st.markdown("---")
+
+# Footer para lembrar o modelo (removido do bloco principal)
+st.sidebar.info(f"Modelo: {transcriber_core.MODELO_DEEPGRAM} | API: Deepgram")
 
 # Widget de Upload de Arquivos
 uploaded_file = st.file_uploader(
@@ -20,25 +24,36 @@ uploaded_file = st.file_uploader(
 # Bloco de processamento
 if uploaded_file is not None:
     
-    # Define caminhos temporários
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
-    temp_file_path = os.path.join(temp_dir, uploaded_file.name)
     
+    # --- PASSO A PASSO DA CORREÇÃO ---
+    
+    # 1. Define o caminho do arquivo ORIGINAL com o nome original (apenas para salvar)
+    original_file_path = os.path.join(temp_dir, uploaded_file.name)
+    
+    # 2. Define o caminho do arquivo SEGURO com um UUID
+    unique_id = uuid.uuid4().hex
+    original_ext = os.path.splitext(uploaded_file.name)[1]
+    safe_file_path = os.path.join(temp_dir, f"safe_{unique_id}{original_ext}")
+
     try:
-        # 1. Salva o arquivo temporariamente
-        with open(temp_file_path, "wb") as f:
+        # Salva o arquivo ORIGINAL no disco primeiro
+        with open(original_file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
+        # Renomeia para o nome seguro antes de chamar o FFmpeg
+        os.rename(original_file_path, safe_file_path)
+        
         st.success(f"Arquivo '{uploaded_file.name}' carregado.")
         
-        if st.button("2. Iniciar Degravação"):
+        if st.button("2. Iniciar Transcrição (Deepgram)"):
             
-            with st.spinner("Processando na Nuvem... Isso pode levar alguns minutos para arquivos grandes."):
+            with st.spinner("Processando na Nuvem..."):
                 
-                # CHAMA O MOTOR CENTRAL COM O CAMINHO DO ARQUIVO TEMPORÁRIO
+                # CHAMA O MOTOR CENTRAL COM O CAMINHO SEGURO
                 inicio = time.time()
-                resultado_formatado = transcriber_core.run_transcription(temp_file_path)
+                resultado_formatado = transcriber_core.run_transcription(safe_file_path)
                 
                 tempo_gasto = time.time() - inicio
                 
@@ -49,11 +64,10 @@ if uploaded_file is not None:
                 st.error(f"Ocorreu um erro no processamento: {resultado_formatado}")
             else:
                 st.success(f"Processamento concluído em {tempo_gasto:.2f} segundos!")
-                
                 st.subheader("Resultado da Transcrição:")
                 st.code(resultado_formatado, language='text')
 
-                # 4. Cria um botão para download do arquivo TXT
+                # 4. Cria o botão de download com o nome original
                 st.download_button(
                     label="Baixar Transcrição (.txt)",
                     data=resultado_formatado,
@@ -66,16 +80,9 @@ if uploaded_file is not None:
 
     finally:
         # 🚨 GARANTINDO A LIMPEZA 🚨
-        if os.path.exists(temp_file_path):
+        # Apaga o arquivo seguro (que foi renomeado)
+        if os.path.exists(safe_file_path):
             try:
-                os.remove(temp_file_path)
-                # Tenta remover a pasta temporária se estiver vazia
-                if not os.listdir(temp_dir):
-                    os.rmdir(temp_dir)
+                os.remove(safe_file_path)
             except Exception as e:
-                # O ideal é não mostrar erros de limpeza, mas manter para depuração
-                print(f"Erro ao limpar arquivo temporário: {e}")
-
-# Footer para lembrar o modelo
-
-st.sidebar.info(f"Modelo: {transcriber_core.MODELO_DEEPGRAM} | API: Deepgram")
+                st.warning(f"Não foi possível limpar o arquivo temporário: {e}")
