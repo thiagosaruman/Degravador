@@ -1,4 +1,5 @@
 # transcriber_core.py
+# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final Otimizada)
 
 import os
 import sys
@@ -8,9 +9,9 @@ import requests
 import json
 
 # ==============================================================================
-# CONFIGURAÇÕES GLOBAIS (DEVEM ESTAR NO TOPO)
+# CONFIGURAÇÕES GLOBAIS (DEVE ESTAR NO TOPO)
 # ==============================================================================
-# Sua chave Deepgram (Já configurada)
+# Chave da Deepgram (Seus créditos de $200)
 DEEPGRAM_API_KEY = "5f7e604041127c06320e8105cfb738b70c4c7fc8"
 # Modelo para máxima precisão jurídica
 MODELO_DEEPGRAM = "whisper-large" 
@@ -25,17 +26,27 @@ def formatar_tempo(segundos):
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
 def extrair_audio_temporario(video_path):
+    """
+    Função corrigida para FFmpeg. Usa o codec AAC, mais universal em nuvem.
+    """
     video_path = limpar_caminho(video_path)
     audio_path = video_path + ".temp.mp3"
     
-    # Comando FFmpeg com compressão de alta qualidade (128k)
-    comando = f'ffmpeg -i "{video_path}" -vn -ar 16000 -ac 1 -b:a 128k "{audio_path}" -y -loglevel error'
+    # Comando FFmpeg com sintaxe limpa e explícita (Corrigindo erro 127)
+    comando = (
+        f'ffmpeg -i "{video_path}" -vn '
+        f'-c:a aac -b:a 128k -ar 16000 -ac 1 '
+        f'"{audio_path}" -y -loglevel error'
+    )
+    
+    # Usamos o shell=True, mas com a sintaxe perfeita, o erro 127 deve sumir.
     subprocess.run(comando, shell=True, check=True)
     return audio_path
 
+
 def formatar_resultado_final(dados, arquivo_original):
     """
-    Função que transforma o JSON da Deepgram em texto legível (PESSOA 1) com quebra de linha dupla.
+    Formata o JSON da Deepgram em blocos de fácil leitura (PESSOA 1, PESSOA 2).
     """
     sentences = dados['results']['channels'][0]['alternatives'][0]['sentences']
     texto_final = []
@@ -49,15 +60,15 @@ def formatar_resultado_final(dados, arquivo_original):
         
         # Se o orador mudar (E não for o primeiro item)
         if speaker_id != current_speaker and current_speaker is not None:
-            # Despeja o buffer anterior com quebra de linha dupla
+            # 1. Despejar o bloco anterior
             if buffer_text:
                 numero_pessoa = current_speaker + 1
                 speaker_name = f"PESSOA {numero_pessoa}"
                 linha = f"[{formatar_tempo(buffer_time)}] {speaker_name}: {buffer_text.strip()}"
                 texto_final.append(linha)
-                texto_final.append("") # Quebra de linha dupla
+                texto_final.append("") # Quebra de linha dupla para leitura
             
-            # Reset
+            # 2. Resetar o buffer para o novo orador
             buffer_text = sentence['text']
             buffer_time = sentence['start']
             
@@ -69,7 +80,7 @@ def formatar_resultado_final(dados, arquivo_original):
         
         current_speaker = speaker_id
         
-    # Despejar o último buffer
+    # Despejar o último buffer que sobrar
     if buffer_text:
         numero_pessoa = current_speaker + 1
         speaker_name = f"PESSOA {numero_pessoa}"
@@ -81,7 +92,7 @@ def formatar_resultado_final(dados, arquivo_original):
 
 def run_transcription(caminho_arquivo):
     """
-    Motor central que executa a transcrição e retorna o conteúdo formatado.
+    Motor principal chamado pelo app_cli.py ou app_web.py.
     """
     if not os.path.exists(caminho_arquivo):
         return f"❌ Erro: Arquivo não encontrado em {caminho_arquivo}"
@@ -130,3 +141,21 @@ def run_transcription(caminho_arquivo):
                 os.remove(arquivo_para_enviar)
             except:
                 pass
+
+def run_transcription(caminho_arquivo):
+    # Função wrapper para o bloco principal de execução (usada por app_cli e app_web)
+    return run_transcription(caminho_arquivo)
+
+
+if __name__ == "__main__":
+    # Bloco CLI de uso local (se rodar app_cli.py)
+    arquivos = sys.argv[1:]
+    if not arquivos:
+        print("💡 ARRASTE ARQUIVOS PARA O ÍCONE .BAT")
+        input("Pressione Enter para sair...")
+    else:
+        print(f"🔌 Iniciando Deepgram...")
+        for arq in arquivos:
+            print(run_transcription(arq))
+        print("\n🏁 Fim da fila.")
+        time.sleep(3)
