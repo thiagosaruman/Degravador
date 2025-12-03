@@ -1,5 +1,5 @@
 # transcriber_core.py
-# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável com Correção de Timestamp)
+# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável)
 
 import os
 import sys
@@ -15,6 +15,8 @@ import json
 DEEPGRAM_API_KEY = "5f7e604041127c06320e8105cfb738b70c4c7fc8"
 # Modelo para MÁXIMA precisão jurídica
 MODELO_DEEPGRAM = "whisper-large" 
+# NOVO: Pausa mínima em segundos para forçar uma quebra de parágrafo em monólogos
+PAUSE_THRESHOLD_SECONDS = 2.5 
 # ==============================================================================
 
 def limpar_caminho(caminho):
@@ -23,16 +25,13 @@ def limpar_caminho(caminho):
 def formatar_tempo(segundos):
     m, s = divmod(segundos, 60)
     h, m = divmod(m, 60)
-    # Garante que o tempo seja sempre inteiro e formatado
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
 def extrair_audio_temporario(video_path):
     """
-    Extrai o áudio do vídeo usando FFmpeg (Codec WAV/PCM universal).
-    Esta função contém a correção de sintaxe do comando FFmpeg para o Linux/Cloud.
+    Função corrigida para usar o codec WAV/PCM (universal e seguro para nuvem).
     """
     video_path = limpar_caminho(video_path)
-    # Usamos WAV para evitar erros de codec complexo (MP3/AAC)
     audio_path = video_path + ".temp.wav" 
     
     print("   ↳ 🔨 Extraindo áudio (WAV/PCM Universal)...")
@@ -52,58 +51,62 @@ def extrair_audio_temporario(video_path):
 
 def formatar_resultado_final(dados, arquivo_original):
     """
-    Formata o JSON da Deepgram. Trata monólogos (sem diarização) usando o rótulo [GERAL] 
-    e o tempo de início correto do áudio.
+    Formata o JSON da Deepgram. Trata monólogos com quebra de parágrafo por pausa longa.
     """
     try:
-        # Acessa a estrutura principal do JSON
         alternatives = dados.get('results', {}).get('channels', [{}])[0].get('alternatives', [{}])[0]
         sentences = alternatives.get('sentences')
 
-        # === CORREÇÃO: MODO MONÓLOGO/GERAL COM TEMPO CORRETO ===
+        # === REDE DE SEGURANÇA: MODO MONÓLOGO/GERAL ===
         if not sentences:
+            # Se a diarização falhou (sem oradores distintos), retorna o texto bruto [GERAL]
             transcript_bruto = alternatives.get('transcript', "(Áudio silencioso ou inválido)")
             words = alternatives.get('words')
             
-            # Tenta encontrar o tempo de início no primeiro item da lista de palavras
             start_time_seconds = 0
             if words and len(words) > 0:
-                # Pega o 'start' do primeiro elemento da lista de palavras
                 start_time_seconds = words[0].get('start', 0)
             
-            # Formato limpo [00:00:00] GERAL: Texto Bruto
             time_marker = formatar_tempo(start_time_seconds)
             conteudo_final = f"[{time_marker}] GERAL: {transcript_bruto.strip()}"
             return conteudo_final
-        # =======================================================
+        # ===============================================
 
+        # === MODO DIÁLOGO E LEITURA FÁCIL ===
         texto_final = []
         current_speaker = None
         buffer_text = ""
         buffer_time = 0
+        last_end_time = 0
 
-        # Processamento das sentenças (Lógica de Agrupamento por Orador)
         for sentence in sentences:
             speaker_id = sentence.get('speaker')
+            sentence_start = sentence['start']
             
-            if speaker_id != current_speaker and current_speaker is not None:
+            speaker_changed = (speaker_id != current_speaker and current_speaker is not None)
+            long_pause = (sentence_start - last_end_time >= PAUSE_THRESHOLD_SECONDS)
+            
+            # Condição para DESPEJAR o bloco anterior
+            if speaker_changed or long_pause:
                 if buffer_text:
                     numero_pessoa = current_speaker + 1
                     speaker_name = f"PESSOA {numero_pessoa}"
-                    # Usa o tempo do início do bloco
                     linha = f"[{formatar_tempo(buffer_time)}] {speaker_name}: {buffer_text.strip()}"
                     texto_final.append(linha)
-                    texto_final.append("") # Quebra de linha dupla
+                    texto_final.append("") # Quebra de linha dupla (Parágrafo)
                 
+                # Reseta o buffer
                 buffer_text = sentence['text']
                 buffer_time = sentence['start']
                 
             else:
+                # Acumula o texto
                 buffer_text += " " + sentence['text']
                 if current_speaker is None:
                     buffer_time = sentence['start']
             
             current_speaker = speaker_id
+            last_end_time = sentence['end'] # Atualiza o tempo final para próxima comparação
             
         # Despejar o último buffer
         if buffer_text:
@@ -116,7 +119,7 @@ def formatar_resultado_final(dados, arquivo_original):
         return conteudo_final
 
     except Exception as e:
-        # Se houver um erro estrutural na API (JSON totalmente inválido)
+        # Se houver um erro estrutural real na API
         return f"❌ ERRO CRÍTICO NA ESTRUTURA DO JSON: {e}"
 
 
