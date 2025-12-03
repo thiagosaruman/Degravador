@@ -9,7 +9,7 @@ import transcriber_core
 # Configura o título e layout da página
 st.set_page_config(page_title="Deepgram Transcriber", layout="wide")
 
-st.title("🗣️ Transcritor Jurídico Cloud")
+st.title("🗣️ Degravador da Mari")
 st.markdown("---")
 
 # Footer para lembrar o modelo (removido do bloco principal)
@@ -47,7 +47,7 @@ if uploaded_file is not None:
         
         st.success(f"Arquivo '{uploaded_file.name}' carregado.")
         
-        if st.button("2. Iniciar Transcrição (Deepgram)"):
+        if st.button("2. Iniciar Degravação"):
             
             with st.spinner("Processando na Nuvem..."):
                 
@@ -86,3 +86,4 @@ if uploaded_file is not None:
                 os.remove(safe_file_path)
             except Exception as e:
                 st.warning(f"Não foi possível limpar o arquivo temporário: {e}")
+
