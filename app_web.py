@@ -32,7 +32,7 @@ if uploaded_file is not None:
 
         st.success(f"Arquivo '{uploaded_file.name}' carregado.")
         
-        if st.button("2. Iniciar Transcrição (Deepgram)"):
+        if st.button("2. Iniciar Degravação"):
             
             with st.spinner("Processando na Nuvem... Isso pode levar alguns minutos para arquivos grandes."):
                 
@@ -77,4 +77,5 @@ if uploaded_file is not None:
                 print(f"Erro ao limpar arquivo temporário: {e}")
 
 # Footer para lembrar o modelo
+
 st.sidebar.info(f"Modelo: {transcriber_core.MODELO_DEEPGRAM} | API: Deepgram")
