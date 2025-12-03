@@ -1,5 +1,5 @@
 # transcriber_core.py
-# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável)
+# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável com Correção de Timestamp)
 
 import os
 import sys
@@ -13,7 +13,7 @@ import json
 # ==============================================================================
 # Sua chave Deepgram (Para acesso aos créditos de $200)
 DEEPGRAM_API_KEY = "5f7e604041127c06320e8105cfb738b70c4c7fc8"
-# Modelo para MÁXIMA precisão jurídica (mais lento, mas mais preciso)
+# Modelo para MÁXIMA precisão jurídica
 MODELO_DEEPGRAM = "whisper-large" 
 # ==============================================================================
 
@@ -23,6 +23,7 @@ def limpar_caminho(caminho):
 def formatar_tempo(segundos):
     m, s = divmod(segundos, 60)
     h, m = divmod(m, 60)
+    # Garante que o tempo seja sempre inteiro e formatado
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
 def extrair_audio_temporario(video_path):
@@ -51,23 +52,30 @@ def extrair_audio_temporario(video_path):
 
 def formatar_resultado_final(dados, arquivo_original):
     """
-    Formata o JSON da Deepgram com a lógica de rastreamento do orador (PESSOA 1, PESSOA 2) 
-    e a rede de segurança para monólogos.
+    Formata o JSON da Deepgram. Trata monólogos (sem diarização) usando o rótulo [GERAL] 
+    e o tempo de início correto do áudio.
     """
     try:
-        # Acessa a estrutura de frases do JSON
+        # Acessa a estrutura principal do JSON
         alternatives = dados.get('results', {}).get('channels', [{}])[0].get('alternatives', [{}])[0]
         sentences = alternatives.get('sentences')
 
-        # === REDE DE SEGURANÇA: MODO MONÓLOGO/GERAL ===
+        # === CORREÇÃO: MODO MONÓLOGO/GERAL COM TEMPO CORRETO ===
         if not sentences:
-            # Se a estrutura de diarização falhou, assumimos que é um monólogo e usamos o texto bruto.
             transcript_bruto = alternatives.get('transcript', "(Áudio silencioso ou inválido)")
+            words = alternatives.get('words')
             
-            # Retorna o texto limpo com rótulo [GERAL], sem erro.
-            conteudo_final = f"[00:00:00] GERAL: {transcript_bruto.strip()}"
+            # Tenta encontrar o tempo de início no primeiro item da lista de palavras
+            start_time_seconds = 0
+            if words and len(words) > 0:
+                # Pega o 'start' do primeiro elemento da lista de palavras
+                start_time_seconds = words[0].get('start', 0)
+            
+            # Formato limpo [00:00:00] GERAL: Texto Bruto
+            time_marker = formatar_tempo(start_time_seconds)
+            conteudo_final = f"[{time_marker}] GERAL: {transcript_bruto.strip()}"
             return conteudo_final
-        # ===============================================
+        # =======================================================
 
         texto_final = []
         current_speaker = None
@@ -82,6 +90,7 @@ def formatar_resultado_final(dados, arquivo_original):
                 if buffer_text:
                     numero_pessoa = current_speaker + 1
                     speaker_name = f"PESSOA {numero_pessoa}"
+                    # Usa o tempo do início do bloco
                     linha = f"[{formatar_tempo(buffer_time)}] {speaker_name}: {buffer_text.strip()}"
                     texto_final.append(linha)
                     texto_final.append("") # Quebra de linha dupla
@@ -169,6 +178,5 @@ def run_transcription(caminho_arquivo):
 
 
 if __name__ == "__main__":
-    # O bloco principal para uso local (app_cli.py)
-    # Apenas para garantir que o Streamlit não use este bloco
+    # Bloco principal desativado para garantir que o Streamlit não rode o CLI
     pass
