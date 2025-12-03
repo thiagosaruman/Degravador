@@ -27,15 +27,16 @@ def formatar_tempo(segundos):
 
 def extrair_audio_temporario(video_path):
     """
-    Extrai o áudio do vídeo usando FFmpeg, gerando um WAV/PCM universal.
-    Isso corrige os erros de codec e sintaxe.
+    Extrai o áudio do vídeo usando FFmpeg (Codec WAV/PCM universal).
+    Esta função contém a correção de sintaxe do comando FFmpeg para o Linux/Cloud.
     """
     video_path = limpar_caminho(video_path)
+    # Usamos WAV para evitar erros de codec complexo (MP3/AAC)
     audio_path = video_path + ".temp.wav" 
     
     print("   ↳ 🔨 Extraindo áudio (WAV/PCM Universal)...")
     
-    # Comando FFmpeg PCM: -acodec pcm_s16le (WAV, seguro para servidores Linux/Cloud)
+    # Comando FFmpeg PCM: Garante sintaxe correta e codec universal
     comando = (
         f'ffmpeg -i "{video_path}" -vn '
         f'-acodec pcm_s16le -ar 16000 -ac 1 ' 
@@ -50,19 +51,22 @@ def extrair_audio_temporario(video_path):
 
 def formatar_resultado_final(dados, arquivo_original):
     """
-    Formata o JSON da Deepgram com o rastreamento do orador (PESSOA 1, PESSOA 2) 
-    e adiciona quebras de linha para leitura fácil.
+    Formata o JSON da Deepgram com a lógica de rastreamento do orador (PESSOA 1, PESSOA 2) 
+    e a rede de segurança para monólogos.
     """
     try:
-        # Acessa a estrutura principal, com checagem de existência
+        # Acessa a estrutura de frases do JSON
         alternatives = dados.get('results', {}).get('channels', [{}])[0].get('alternatives', [{}])[0]
         sentences = alternatives.get('sentences')
 
-        # === REDE DE SEGURANÇA para o erro 'sentences' ===
+        # === REDE DE SEGURANÇA: MODO MONÓLOGO/GERAL ===
         if not sentences:
-            # Tenta pegar o texto bruto em caso de erro na estrutura
-            transcript = alternatives.get('transcript', "(Áudio silencioso ou inválido)")
-            return f"❌ Erro de conteúdo: {transcript}"
+            # Se a estrutura de diarização falhou, assumimos que é um monólogo e usamos o texto bruto.
+            transcript_bruto = alternatives.get('transcript', "(Áudio silencioso ou inválido)")
+            
+            # Retorna o texto limpo com rótulo [GERAL], sem erro.
+            conteudo_final = f"[00:00:00] GERAL: {transcript_bruto.strip()}"
+            return conteudo_final
         # ===============================================
 
         texto_final = []
@@ -70,7 +74,7 @@ def formatar_resultado_final(dados, arquivo_original):
         buffer_text = ""
         buffer_time = 0
 
-        # Processamento das sentenças (Lógica de Agrupamento)
+        # Processamento das sentenças (Lógica de Agrupamento por Orador)
         for sentence in sentences:
             speaker_id = sentence.get('speaker')
             
@@ -103,8 +107,8 @@ def formatar_resultado_final(dados, arquivo_original):
         return conteudo_final
 
     except Exception as e:
-        # Erro geral de parse
-        return f"❌ Erro na estrutura do JSON (parse): {e}"
+        # Se houver um erro estrutural na API (JSON totalmente inválido)
+        return f"❌ ERRO CRÍTICO NA ESTRUTURA DO JSON: {e}"
 
 
 def run_transcription(caminho_arquivo):
@@ -128,7 +132,7 @@ def run_transcription(caminho_arquivo):
     
     # Sai se a extração falhar (erro de codec/ffmpeg)
     if not arquivo_para_enviar or not os.path.exists(arquivo_para_enviar):
-        return "❌ ERRO CRÍTICO: Falha na extração de áudio do FFmpeg. Arquivo corrompido ou codec inválido."
+        return "❌ ERRO CRÍTICO: Falha na extração de áudio do FFmpeg. Verifique o log do Streamlit."
 
     # 2. Conexão
     url = "https://api.deepgram.com/v1/listen"
@@ -166,13 +170,5 @@ def run_transcription(caminho_arquivo):
 
 if __name__ == "__main__":
     # O bloco principal para uso local (app_cli.py)
-    arquivos = sys.argv[1:]
-    if not arquivos:
-        print("💡 ARRASTE ARQUIVOS PARA O ÍCONE .BAT")
-        input("Pressione Enter para sair...")
-    else:
-        print(f"🔌 Iniciando Deepgram...")
-        for arq in arquivos:
-            print(run_transcription(arq))
-        print("\n🏁 Fim da fila.")
-        time.sleep(3)
+    # Apenas para garantir que o Streamlit não use este bloco
+    pass
