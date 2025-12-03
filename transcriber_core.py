@@ -1,5 +1,5 @@
 # transcriber_core.py
-# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável)
+# MOTOR CENTRAL DE TRANSCRIÇÃO (Versão Final e Estável com Quebra por Pausa)
 
 import os
 import sys
@@ -25,6 +25,7 @@ def limpar_caminho(caminho):
 def formatar_tempo(segundos):
     m, s = divmod(segundos, 60)
     h, m = divmod(m, 60)
+    # Garante que o tempo seja sempre inteiro e formatado
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
 def extrair_audio_temporario(video_path):
@@ -51,86 +52,88 @@ def extrair_audio_temporario(video_path):
 
 def formatar_resultado_final(dados, arquivo_original):
     """
-    Formata o JSON da Deepgram. Trata monólogos com quebra de parágrafo por pausa longa.
+    Formata o JSON: Implementa quebra de parágrafo por PAUSA LONGA (2.5s) ou ORADOR.
+    Usa a lista 'words' para timestamps e detecção de pausas em todos os modos.
     """
     try:
         alternatives = dados.get('results', {}).get('channels', [{}])[0].get('alternatives', [{}])[0]
-        sentences = alternatives.get('sentences')
+        words = alternatives.get('words') # Lista de palavras é mais confiável que 'sentences'
 
-        # === REDE DE SEGURANÇA: MODO MONÓLOGO/GERAL ===
-        if not sentences:
-            # Se a diarização falhou (sem oradores distintos), retorna o texto bruto [GERAL]
+        if not words:
+            # Caso de áudio silencioso ou erro fatal
             transcript_bruto = alternatives.get('transcript', "(Áudio silencioso ou inválido)")
-            words = alternatives.get('words')
-            
-            start_time_seconds = 0
-            if words and len(words) > 0:
-                start_time_seconds = words[0].get('start', 0)
-            
-            time_marker = formatar_tempo(start_time_seconds)
-            conteudo_final = f"[{time_marker}] GERAL: {transcript_bruto.strip()}"
-            return conteudo_final
-        # ===============================================
+            return f"[00:00:00] GERAL: {transcript_bruto.strip()}"
 
-        # === MODO DIÁLOGO E LEITURA FÁCIL ===
         texto_final = []
         current_speaker = None
-        buffer_text = ""
-        buffer_time = 0
-        last_end_time = 0
+        buffer_words = []
+        last_word_end_time = 0.0
 
-        for sentence in sentences:
-            speaker_id = sentence.get('speaker')
-            sentence_start = sentence['start']
+        for word_data in words:
+            # 'speaker' só estará presente se houver diarização, senão é None/0
+            speaker_id = word_data.get('speaker') 
+            word_start = word_data['start']
             
+            # Condição 1: Orador Mudou (Quebra de Diálogo)
             speaker_changed = (speaker_id != current_speaker and current_speaker is not None)
-            long_pause = (sentence_start - last_end_time >= PAUSE_THRESHOLD_SECONDS)
+            
+            # Condição 2: Pausa Longa (Quebra de Parágrafo para Leitura Fácil)
+            long_pause = (word_start - last_word_end_time >= PAUSE_THRESHOLD_SECONDS)
             
             # Condição para DESPEJAR o bloco anterior
             if speaker_changed or long_pause:
-                if buffer_text:
-                    numero_pessoa = current_speaker + 1
-                    speaker_name = f"PESSOA {numero_pessoa}"
-                    linha = f"[{formatar_tempo(buffer_time)}] {speaker_name}: {buffer_text.strip()}"
+                if buffer_words:
+                    # Formata e anexa o parágrafo anterior
+                    first_word_time = buffer_words[0]['start']
+                    
+                    if current_speaker is None:
+                        speaker_name = "GERAL"
+                    else:
+                        numero_pessoa = current_speaker + 1
+                        speaker_name = f"PESSOA {numero_pessoa}"
+                        
+                    # Junta as palavras do buffer para formar a frase do parágrafo
+                    linha = f"[{formatar_tempo(first_word_time)}] {speaker_name}: {' '.join([w['punctuated_word'] for w in buffer_words])}"
                     texto_final.append(linha)
                     texto_final.append("") # Quebra de linha dupla (Parágrafo)
                 
-                # Reseta o buffer
-                buffer_text = sentence['text']
-                buffer_time = sentence['start']
+                # Reseta o buffer com a palavra atual
+                buffer_words = [word_data]
                 
             else:
-                # Acumula o texto
-                buffer_text += " " + sentence['text']
-                if current_speaker is None:
-                    buffer_time = sentence['start']
+                # Acumula a palavra
+                buffer_words.append(word_data)
             
             current_speaker = speaker_id
-            last_end_time = sentence['end'] # Atualiza o tempo final para próxima comparação
+            last_word_end_time = word_data['end']
             
         # Despejar o último buffer
-        if buffer_text:
-            numero_pessoa = current_speaker + 1
-            speaker_name = f"PESSOA {numero_pessoa}"
-            linha = f"[{formatar_tempo(buffer_time)}] {speaker_name}: {buffer_text.strip()}"
+        if buffer_words:
+            first_word_time = buffer_words[0]['start']
+            
+            if current_speaker is None:
+                speaker_name = "GERAL"
+            else:
+                numero_pessoa = current_speaker + 1
+                speaker_name = f"PESSOA {numero_pessoa}"
+                
+            linha = f"[{formatar_tempo(first_word_time)}] {speaker_name}: {' '.join([w['punctuated_word'] for w in buffer_words])}"
             texto_final.append(linha)
             
         conteudo_final = "\n".join(texto_final)
         return conteudo_final
 
     except Exception as e:
-        # Se houver um erro estrutural real na API
-        return f"❌ ERRO CRÍTICO NA ESTRUTURA DO JSON: {e}"
+        return f"❌ ERRO CRÍTICO NA ESTRUTURA DO JSON (Final): {e}"
 
 
 def run_transcription(caminho_arquivo):
     """
-    Motor principal chamado pelo app_cli.py ou app_web.py.
+    Motor principal.
     """
     if not os.path.exists(caminho_arquivo):
         return f"❌ Erro: Arquivo não encontrado em {caminho_arquivo}"
 
-    # Verifica se a biblioteca de requisições está presente
     try:
         import requests
     except ImportError:
@@ -142,7 +145,6 @@ def run_transcription(caminho_arquivo):
     # 1. Preparação (Conversão e Envio)
     arquivo_para_enviar = extrair_audio_temporario(caminho_arquivo)
     
-    # Sai se a extração falhar (erro de codec/ffmpeg)
     if not arquivo_para_enviar or not os.path.exists(arquivo_para_enviar):
         return "❌ ERRO CRÍTICO: Falha na extração de áudio do FFmpeg. Verifique o log do Streamlit."
 
@@ -151,7 +153,8 @@ def run_transcription(caminho_arquivo):
     params = {
         "model": MODELO_DEEPGRAM, "language": "pt", "smart_format": "true",
         "diarize": "true", "paragraphs": "false", "punctuate": "true",
-        "sentences": "true", "profanity_filter": "false" 
+        "sentences": "true", "profanity_filter": "false", 
+        "interim_results": "false" # Garante que a resposta só venha completa no final
     }
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
@@ -181,5 +184,4 @@ def run_transcription(caminho_arquivo):
 
 
 if __name__ == "__main__":
-    # Bloco principal desativado para garantir que o Streamlit não rode o CLI
     pass
