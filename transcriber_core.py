@@ -25,23 +25,34 @@ def formatar_tempo(segundos):
     h, m = divmod(m, 60)
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
+# NO ARQUIVO transcriber_core.py:
+
 def extrair_audio_temporario(video_path):
     """
-    Função corrigida para FFmpeg. Usa o codec AAC, mais universal em nuvem.
+    Função corrigida para usar o codec WAV (PCM), que é universalmente suportado
+    e não exige encoders externos complexos como o AAC/LAME.
     """
     video_path = limpar_caminho(video_path)
-    audio_path = video_path + ".temp.mp3"
+    # MUDA A SAÍDA PARA WAV (UNCOMPRESSED/UNIVERSAL)
+    audio_path = video_path + ".temp.wav" 
     
-    # Comando FFmpeg com sintaxe limpa e explícita (Corrigindo erro 127)
+    print("   ↳ 🔨 Extraindo áudio (WAV/PCM Universal)...")
+    
+    # Comando FFmpeg PCM: -acodec pcm_s16le (WAV, simples e seguro)
     comando = (
         f'ffmpeg -i "{video_path}" -vn '
-        f'-c:a aac -b:a 128k -ar 16000 -ac 1 '
+        f'-acodec pcm_s16le -ar 16000 -ac 1 ' 
         f'"{audio_path}" -y -loglevel error'
     )
     
-    # Usamos o shell=True, mas com a sintaxe perfeita, o erro 127 deve sumir.
-    subprocess.run(comando, shell=True, check=True)
-    return audio_path
+    try:
+        subprocess.run(comando, shell=True, check=True)
+        return audio_path
+    except subprocess.CalledProcessError as e:
+        print(f"❌ ERRO CRÍTICO DE CODEC. Código de saída: {e.returncode}. O servidor falhou ao criar o WAV.")
+        return None
+    except FileNotFoundError:
+        return None
 
 
 def formatar_resultado_final(dados, arquivo_original):
@@ -155,4 +166,5 @@ if __name__ == "__main__":
             print(run_transcription(arq))
         print("\n🏁 Fim da fila.")
         time.sleep(3)
+
 
