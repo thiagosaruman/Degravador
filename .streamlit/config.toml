@@ -1,4 +1,4 @@
 # .streamlit/config.toml
 [server]
-# Aumenta o limite de upload para 1024 MB (1 GB).
-maxUploadSize = 1024
+# Aumenta o limite de upload para 2048 MB (2 GB).
+maxUploadSize = 2048
